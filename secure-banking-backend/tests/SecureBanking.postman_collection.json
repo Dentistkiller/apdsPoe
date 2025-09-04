@@ -1,0 +1,427 @@
+{
+  "info": {
+    "_postman_id": "f040ab38-eaec-42b8-9d98-bb5162e89d28",
+    "name": "Secure Banking Backend \u2014 API & Tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "End-to-end workflow for customer + employee, including SWIFT verification & submit (stub)."
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+              "pm.test(\"Has time\", function () {",
+              "  var json = pm.response.json();",
+              "  pm.expect(json).to.have.property(\"status\", \"ok\");",
+              "  pm.expect(json).to.have.property(\"time\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer \u2022 Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/customers/register",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "customers",
+            "register"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{cust_username}}\",\n  \"fullName\": \"{{cust_fullName}}\",\n  \"idNumber\": \"{{cust_idNumber}}\",\n  \"accountNumber\": \"{{cust_accountNumber}}\",\n  \"password\": \"{{cust_password}}\"\n}"
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const status = pm.response.code;",
+              "pm.test(\"Created (201) or Already Exists (409)\", function () {",
+              "  pm.expect([201,409]).to.include(status);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer \u2022 Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/customers/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "customers",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{cust_username}}\",\n  \"accountNumber\": \"{{cust_accountNumber}}\",\n  \"password\": \"{{cust_password}}\"\n}"
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test(\"Has token\", function () { pm.expect(json).to.have.property(\"token\"); });",
+              "// Save token & user",
+              "pm.environment.set(\"jwt_customer\", json.token);",
+              "if (json.user && json.user.id) { pm.environment.set(\"customer_id\", json.user.id); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer \u2022 Create Payment",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/payments",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "payments"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": \"{{pay_amount}}\",\n  \"currency\": \"{{pay_currency}}\",\n  \"provider\": \"SWIFT\",\n  \"beneficiaryName\": \"{{bene_name}}\",\n  \"beneficiaryAccountNumber\": \"{{bene_account}}\",\n  \"beneficiarySwift\": \"{{bene_swift}}\",\n  \"beneficiaryBankName\": \"{{bene_bank}}\",\n  \"note\": \"Postman test payment {{timestamp}}\"\n}"
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{jwt_customer}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 201\", function () { pm.response.to.have.status(201); });",
+              "const json = pm.response.json();",
+              "pm.test(\"Payment object exists\", function () { pm.expect(json).to.have.property(\"payment\"); });",
+              "pm.test(\"PENDING_REVIEW\", function () { pm.expect(json.payment.status).to.eql(\"PENDING_REVIEW\"); });",
+              "pm.environment.set(\"payment_id\", json.payment.id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer \u2022 Get My Payments",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/payments/mine",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "payments",
+            "mine"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{jwt_customer}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test(\"Has payments array\", function () { pm.expect(json).to.have.property(\"payments\"); });",
+              "pm.test(\"At least one payment\", function () { pm.expect(json.payments.length).to.be.above(0); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Employee \u2022 Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/employees/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "employees",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{emp_email}}\",\n  \"password\": \"{{emp_password}}\"\n}"
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test(\"Has token\", function () { pm.expect(json).to.have.property(\"token\"); });",
+              "pm.environment.set(\"jwt_employee\", json.token);",
+              "if (json.user && json.user.id) { pm.environment.set(\"employee_id\", json.user.id); }"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin \u2022 List Payments (PENDING_REVIEW)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/payments?status=PENDING_REVIEW",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "payments?status=PENDING_REVIEW"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{jwt_employee}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test(\"Has payments array\", function () { pm.expect(json).to.have.property(\"payments\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin \u2022 Verify Payment",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/payments/{{payment_id}}/verify",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "payments",
+            "{{payment_id}}",
+            "verify"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"note\": \"Checked by Postman test\"\n}"
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{jwt_employee}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test(\"Status VERIFIED\", function () { pm.expect(json.payment.status).to.eql(\"VERIFIED\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin \u2022 Submit to SWIFT (stub)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/admin/payments/{{payment_id}}/submit",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "admin",
+            "payments",
+            "{{payment_id}}",
+            "submit"
+          ]
+        },
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{jwt_employee}}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status 200\", function () { pm.response.to.have.status(200); });",
+              "const json = pm.response.json();",
+              "pm.test(\"Status SUBMITTED\", function () { pm.expect(json.payment.status).to.eql(\"SUBMITTED\"); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
