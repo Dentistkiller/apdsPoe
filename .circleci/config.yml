@@ -4,11 +4,7 @@ executors:
   node-executor:
     docker:
       - image: cimg/node:20.10
-      # Use the official MongoDB image (the cimg/mongo image does not exist / is private)
-      - image: mongo:6.0
-        environment:
-          MONGO_INITDB_ROOT_USERNAME: root
-          MONGO_INITDB_ROOT_PASSWORD: example
+      - image: mongo:6.0     # no auth; app connects to mongodb://localhost:27017
     working_directory: ~/project
 
 commands:
@@ -30,6 +26,24 @@ commands:
               sleep 2
             done
             echo "Service did not become ready in time"; exit 1
+
+  wait-for-tcp:
+    description: "Wait for a TCP port to accept connections"
+    parameters:
+      host:
+        type: string
+      port:
+        type: string
+    steps:
+      - run:
+          name: "Wait for tcp://<< parameters.host >>:<< parameters.port >>"
+          command: |
+            for i in $(seq 1 60); do
+              (echo > /dev/tcp/<< parameters.host >>/<< parameters.port >>) >/dev/null 2>&1 && echo "TCP is up" && exit 0
+              echo "Waiting for tcp://<< parameters.host >>:<< parameters.port >>…"
+              sleep 2
+            done
+            echo "TCP not ready in time"; exit 1
 
 jobs:
   install-backend-deps:
@@ -60,12 +74,10 @@ jobs:
           name: Run backend tests
           command: npm test --prefix ./secure-banking-backend
 
-  # NEW: Run Newman API tests against the Postman collection
   api-tests-newman:
     executor: node-executor
     environment:
       PORT: "8080"
-      # Connect to the Mongo service container using localhost:27017
       MONGO_URI: "mongodb://localhost:27017/secure_banking"
       NODE_ENV: "test"
       JWT_SECRET: "ci-secret-jwt"
@@ -79,11 +91,14 @@ jobs:
           keys:
             - v1-backend-deps-{{ checksum "secure-banking-backend/package-lock.json" }}
             - v1-backend-deps-
+      - wait-for-tcp:
+          host: "localhost"
+          port: "27017"
       - run:
           name: Start API (background)
           command: |
             cd secure-banking-backend
-            node src/server.js &
+            node src/server.js > ../api.log 2>&1 &
             echo $! > ../api.pid
       - wait-for-http:
           url: "http://localhost:8080/api/health"
@@ -95,6 +110,12 @@ jobs:
               -e ./tests/SecureBanking.local_environment.json \
               --reporters cli \
               --bail
+      - run:
+          name: Print API logs on failure
+          when: on_fail
+          command: |
+            echo "==== api.log ===="
+            cat api.log || true
       - run:
           name: Stop API
           command: |
