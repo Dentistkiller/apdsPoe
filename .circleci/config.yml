@@ -4,7 +4,11 @@ executors:
   node-executor:
     docker:
       - image: cimg/node:20.10
-      - image: cimg/mongo:6.0
+      # Use the official MongoDB image (the cimg/mongo image does not exist / is private)
+      - image: mongo:6.0
+        environment:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: example
     working_directory: ~/project
 
 commands:
@@ -56,10 +60,12 @@ jobs:
           name: Run backend tests
           command: npm test --prefix ./secure-banking-backend
 
+  # NEW: Run Newman API tests against the Postman collection
   api-tests-newman:
     executor: node-executor
     environment:
       PORT: "8080"
+      # Connect to the Mongo service container using localhost:27017
       MONGO_URI: "mongodb://localhost:27017/secure_banking"
       NODE_ENV: "test"
       JWT_SECRET: "ci-secret-jwt"
@@ -87,12 +93,8 @@ jobs:
             cd secure-banking-backend
             npx newman run ./tests/SecureBanking.postman_collection.json \
               -e ./tests/SecureBanking.local_environment.json \
-              --reporters cli,htmlextra \
-              --reporter-htmlextra-export ./newman/report.html \
+              --reporters cli \
               --bail
-      - store_artifacts:
-          path: secure-banking-backend/newman
-          destination: newman-report
       - run:
           name: Stop API
           command: |
