@@ -4,7 +4,9 @@ executors:
   node-executor:
     docker:
       - image: cimg/node:20.10
-      - image: mongo:6.0     # no auth; app connects to mongodb://localhost:27017
+      # Use official MongoDB without auth to keep CI simple
+      - image: mongo:6.0
+        command: ["--bind_ip_all"]
     working_directory: ~/project
 
 commands:
@@ -13,37 +15,35 @@ commands:
     parameters:
       url:
         type: string
+      attempts:
+        type: integer
+        default: 90
+      sleep_secs:
+        type: integer
+        default: 2
+      log_path:
+        type: string
+        default: ""
     steps:
       - run:
           name: "Wait for << parameters.url >>"
           command: |
-            for i in $(seq 1 60); do
+            set +e
+            for i in $(seq 1 << parameters.attempts >>); do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" "<< parameters.url >>" || true)
               if [ "$STATUS" = "200" ]; then
-                echo "Endpoint is up"; exit 0
+                echo "Endpoint is up (HTTP 200)"; exit 0
               fi
-              echo "Waiting for service (got $STATUS)…"
-              sleep 2
+              echo "Waiting for service (got $STATUS)… attempt $i/<< parameters.attempts >>"
+              sleep << parameters.sleep_secs >>
             done
-            echo "Service did not become ready in time"; exit 1
-
-  wait-for-tcp:
-    description: "Wait for a TCP port to accept connections"
-    parameters:
-      host:
-        type: string
-      port:
-        type: string
-    steps:
-      - run:
-          name: "Wait for tcp://<< parameters.host >>:<< parameters.port >>"
-          command: |
-            for i in $(seq 1 60); do
-              (echo > /dev/tcp/<< parameters.host >>/<< parameters.port >>) >/dev/null 2>&1 && echo "TCP is up" && exit 0
-              echo "Waiting for tcp://<< parameters.host >>:<< parameters.port >>…"
-              sleep 2
-            done
-            echo "TCP not ready in time"; exit 1
+            echo "Service did not become ready in time."
+            if [ -n "<< parameters.log_path >>" ] && [ -f "<< parameters.log_path >>" ]; then
+              echo "==== API LOGS (tail) ===="
+              tail -n 300 "<< parameters.log_path >>"
+              echo "========================="
+            fi
+            exit 1
 
 jobs:
   install-backend-deps:
@@ -74,10 +74,12 @@ jobs:
           name: Run backend tests
           command: npm test --prefix ./secure-banking-backend
 
+  # Newman API tests against /secure-banking-backend/tests collection/env
   api-tests-newman:
     executor: node-executor
     environment:
       PORT: "8080"
+      # No-auth Mongo service container above; app connects directly:
       MONGO_URI: "mongodb://localhost:27017/secure_banking"
       NODE_ENV: "test"
       JWT_SECRET: "ci-secret-jwt"
@@ -91,17 +93,17 @@ jobs:
           keys:
             - v1-backend-deps-{{ checksum "secure-banking-backend/package-lock.json" }}
             - v1-backend-deps-
-      - wait-for-tcp:
-          host: "localhost"
-          port: "27017"
       - run:
-          name: Start API (background)
+          name: Start API (background, capture logs)
           command: |
             cd secure-banking-backend
             node src/server.js > ../api.log 2>&1 &
             echo $! > ../api.pid
       - wait-for-http:
           url: "http://localhost:8080/api/health"
+          attempts: 90
+          sleep_secs: 2
+          log_path: "api.log"
       - run:
           name: Run Newman collection
           command: |
@@ -111,15 +113,11 @@ jobs:
               --reporters cli \
               --bail
       - run:
-          name: Print API logs on failure
-          when: on_fail
-          command: |
-            echo "==== api.log ===="
-            cat api.log || true
-      - run:
           name: Stop API
           command: |
             if [ -f api.pid ]; then kill -9 $(cat api.pid) || true; fi
+            sleep 1
+            if [ -f api.log ]; then echo "==== FINAL API LOGS (tail) ===="; tail -n 200 api.log || true; fi
 
   install-frontend-deps:
     executor: node-executor
