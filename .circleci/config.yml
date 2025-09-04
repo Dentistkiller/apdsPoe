@@ -1,5 +1,3 @@
-# .circleci/config.yml
-
 version: 2.1
 
 executors:
@@ -9,53 +7,71 @@ executors:
     working_directory: ~/project
 
 jobs:
-  install-deps:
+  install-backend-deps:
     executor: node-executor
     steps:
       - checkout
       - restore_cache:
           keys:
-            - v1-deps-{{ checksum "package-lock.json" }}
-            - v1-deps-
+            - v1-backend-deps-{{ checksum "secure-banking-backend/package-lock.json" }}
+            - v1-backend-deps-
       - run:
-          name: Install dependencies
-          command: npm ci
+          name: Install backend deps
+          command: npm ci --prefix ./secure-banking-backend
       - save_cache:
           paths:
-            - ~/.npm
-            - node_modules
-          key: v1-deps-{{ checksum "package-lock.json" }}
+            - ./secure-banking-backend/node_modules
+          key: v1-backend-deps-{{ checksum "secure-banking-backend/package-lock.json" }}
 
-  run-tests:
+  test-backend:
     executor: node-executor
     steps:
       - checkout
       - restore_cache:
           keys:
-            - v1-deps-{{ checksum "package-lock.json" }}
-            - v1-deps-
+            - v1-backend-deps-{{ checksum "secure-banking-backend/package-lock.json" }}
+            - v1-backend-deps-
       - run:
           name: Run backend tests
           command: npm test --prefix ./secure-banking-backend
-      - run:
-          name: Lint backend
-          command: npm run lint --prefix ./secure-banking-backend
 
-  start-server:
+  install-frontend-deps:
     executor: node-executor
     steps:
       - checkout
+      - restore_cache:
+          keys:
+            - v1-frontend-deps-{{ checksum "secure-banking-frontend/package-lock.json" }}
+            - v1-frontend-deps-
       - run:
-          name: Start server
-          command: |
-            cd ./secure-banking-backend
-            node src/server.js
+          name: Install frontend deps
+          command: npm ci --prefix ./secure-banking-frontend
+      - save_cache:
+          paths:
+            - ./secure-banking-frontend/node_modules
+          key: v1-frontend-deps-{{ checksum "secure-banking-frontend/package-lock.json" }}
+
+  build-frontend:
+    executor: node-executor
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-frontend-deps-{{ checksum "secure-banking-frontend/package-lock.json" }}
+            - v1-frontend-deps-
+      - run:
+          name: Build frontend
+          command: npm run build --prefix ./secure-banking-frontend
 
 workflows:
   version: 2
   build-and-test:
     jobs:
-      - install-deps
-      - run-tests:
+      - install-backend-deps
+      - test-backend:
           requires:
-            - install-deps
+            - install-backend-deps
+      - install-frontend-deps
+      - build-frontend:
+          requires:
+            - install-frontend-deps
