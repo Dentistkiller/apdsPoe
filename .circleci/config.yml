@@ -1,10 +1,10 @@
 version: 2.1
 
 executors:
-  node20:
+  node-executor:
     docker:
-      - image: cimg/node:20.10      # Primary container
-      - image: cimg/mongo:6.0       # MongoDB service for backend
+      - image: cimg/node:20.10
+      - image: cimg/mongo:6.0
     working_directory: ~/project
 
 commands:
@@ -29,7 +29,7 @@ commands:
 
 jobs:
   install-backend-deps:
-    executor: node20
+    executor: node-executor
     steps:
       - checkout
       - restore_cache:
@@ -44,9 +44,8 @@ jobs:
             - ./secure-banking-backend/node_modules
           key: v1-backend-deps-{{ checksum "secure-banking-backend/package-lock.json" }}
 
-  # Optional: runs "npm test" if it exists; otherwise skips without failing CI
   test-backend:
-    executor: node20
+    executor: node-executor
     steps:
       - checkout
       - restore_cache:
@@ -54,20 +53,12 @@ jobs:
             - v1-backend-deps-{{ checksum "secure-banking-backend/package-lock.json" }}
             - v1-backend-deps-
       - run:
-          name: Run backend unit tests (skip if none)
-          command: |
-            cd secure-banking-backend
-            if npm run -s test >/dev/null 2>&1; then
-              npm test
-            else
-              echo "No unit tests defined; skipping."
-            fi
+          name: Run backend tests
+          command: npm test --prefix ./secure-banking-backend
 
-  # Start API and run Newman against your Postman collection/env
   api-tests-newman:
-    executor: node20
+    executor: node-executor
     environment:
-      # Backend runtime configuration for CI
       PORT: "8080"
       MONGO_URI: "mongodb://localhost:27017/secure_banking"
       NODE_ENV: "test"
@@ -83,10 +74,7 @@ jobs:
             - v1-backend-deps-{{ checksum "secure-banking-backend/package-lock.json" }}
             - v1-backend-deps-
       - run:
-          name: Ensure Newman is available
-          command: npm i -D newman newman-reporter-htmlextra --prefix ./secure-banking-backend
-      - run:
-          name: Start backend API (background)
+          name: Start API (background)
           command: |
             cd secure-banking-backend
             node src/server.js &
@@ -106,12 +94,12 @@ jobs:
           path: secure-banking-backend/newman
           destination: newman-report
       - run:
-          name: Stop backend API
+          name: Stop API
           command: |
             if [ -f api.pid ]; then kill -9 $(cat api.pid) || true; fi
 
   install-frontend-deps:
-    executor: node20
+    executor: node-executor
     steps:
       - checkout
       - restore_cache:
@@ -127,7 +115,7 @@ jobs:
           key: v1-frontend-deps-{{ checksum "secure-banking-frontend/package-lock.json" }}
 
   build-frontend:
-    executor: node20
+    executor: node-executor
     steps:
       - checkout
       - restore_cache:
@@ -137,9 +125,6 @@ jobs:
       - run:
           name: Build frontend
           command: npm run build --prefix ./secure-banking-frontend
-      - store_artifacts:
-          path: secure-banking-frontend/dist
-          destination: frontend-dist
 
 workflows:
   version: 2
