@@ -40,11 +40,5 @@ app.use(notFound);
 app.use(errorHandler);
 
 
-const HOST = process.env.HOST || '0.0.0.0';
-app.get('/api/health', (req,res)=>res.json({status:'ok'}));
-module.exports = app; // export for tests
-
-if (require.main === module) {
-  app.listen(PORT, HOST, () => console.log(`Server on http://${HOST}:${PORT}`));
-}
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
