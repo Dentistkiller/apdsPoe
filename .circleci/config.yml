@@ -100,7 +100,7 @@ jobs:
             node src/server.js > ../api.log 2>&1 &
             echo $! > ../api.pid
       - wait-for-http:
-          url: "http://localhost:8080/api/health"
+          url: "http://127.0.0.1:8080/api/health"
           attempts: 90
           sleep_secs: 2
           log_path: "api.log"
